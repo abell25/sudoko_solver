@@ -1,28 +1,8 @@
 import math
 import os
 
-BOARD1 = "1  4 3 23   2 43"
-BOARD2 =  "195  6   " + \
-         "8 7  163 " + \
-         "  47 21  " + \
-         " 7  2391 " + \
-         "         " + \
-         " 5314  6 " + \
-         "  92 78  " + \
-         " 865  3 7" + \
-         "   3  526"
-
-BOARD =  "6    41  " + \
-         "7    8   " + \
-         "9 4 17   " + \
-         " 6738    " + \
-         "82 7 1 36" + \
-         " 13  57 9" + \
-         " 981 3 7 " + \
-         " 4   6 1 " + \
-         "   49  5 "
-
-SOLUTION = list(len(BOARD)*[' '])#list(BOARD)
+BOARD = "4     8 5 3          7      2     6     8 4      1       6 3 7 5  2     1 4      "
+SOLUTION = list(len(BOARD)*[' '])
 CELLS = len(BOARD)
 ROWS = int(math.sqrt(CELLS))
 COLUMNS = ROWS
@@ -31,12 +11,30 @@ SQUARE_SIDE = int(math.sqrt((CELLS/NUMBER_OF_SQUARES)))
 VALUES = range(1, ROWS+1)
 INFILE = "sudoku.cnf"
 OUTFILE = 'sudoku.out'
-lines = []
+LINES = []
+CONSTRAINTS = []
+KNOWNS = []
 VERBOSE = False
-f = open(INFILE, 'w')
 NUM_VARIABLES = len(VALUES)*CELLS
-print "sudoku.py running!"
+print "sudoku.py starting!"
 
+def init_board(board):
+  global LINES, KNOWNS, BOARD, SOLUTION, CELLS, ROWS, COLUMNS
+  global NUMBER_OF_SQUARES, SQUARE_SIDE, VALUES, NUM_VARIABLES
+
+  BOARD = board
+  SOLUTION = list(len(BOARD)*[' '])
+  CELLS = len(BOARD)
+  ROWS = int(math.sqrt(CELLS))
+  COLUMNS = ROWS
+  NUMBER_OF_SQUARES = ROWS
+  SQUARE_SIDE = int(math.sqrt((CELLS/NUMBER_OF_SQUARES)))
+  VALUES = range(1, ROWS+1)
+  print "len(lines) = %d" % len(LINES)
+  LINES = []
+  KNOWNS = []
+  NUM_VARIABLES = len(VALUES)*CELLS
+  
 def getBool(variable, value):
   return variable + ((value-1)*CELLS)
 
@@ -46,19 +44,18 @@ def allDiff(variables, values):
     remaining.remove(v1)
     for v2 in remaining:
       for val in values:
-        lines.append("-%d -%d 0" % (getBool(v1, val), getBool(v2, val)))
-        if VERBOSE: print "-%d -%d 0" % (getBool(v1, val), getBool(v2, val))
+        CONSTRAINTS.append("-%d -%d 0" % (getBool(v1, val), getBool(v2, val)))
   for val in values:
-    lines.append("%s 0" % ' '.join([str(getBool(x, val)) for x in values]))
-    if VERBOSE: print "%s 0" % ' '.join([str(getBool(x, val)) for x in values])
+    CONSTRAINTS.append("%s 0" % ' '.join([str(getBool(x, val)) for x in values]))
 
 def getKnown():
   for i in range(1,CELLS+1):
     if BOARD[i-1] != ' ':
-      lines.append("%d 0" % getBool(i, int(BOARD[i-1])))
+      KNOWNS.append("%d 0" % getBool(i, int(BOARD[i-1])))
       if VERBOSE: print "%d 0" % getBool(i, int(BOARD[i-1]))
 
 def constraints():
+  if len(CONSTRAINTS) > 0: return
   # Contraint %1: Every row value is different
   for r in range(1,ROWS+1):
       allDiff([c + (r-1)*COLUMNS for c in range(1,COLUMNS+1)], VALUES)
@@ -69,19 +66,21 @@ def constraints():
   #Constraint %3: Every square value is different
   for sq in range(1, NUMBER_OF_SQUARES+1):
       allDiff(getSquare(sq), VALUES)
-  #Constraint %4: Every cell has 1 value
+  #Constraint %4: Every cell has 1 value 
+  # (exactly 1 to be precise but the previous constraints ensure this)
   for c in range(1,CELLS+1):
-      lines.append('%s 0' % ' '.join([str(getBool(c, val)) for val in VALUES]))
+      CONSTRAINTS.append('%s 0' % ' '.join([str(getBool(c, val)) for val in VALUES]))
       if VERBOSE: print '%s 0' % ' '.join([str(getBool(c, val)) for val in VALUES])
 
 def run():
   total_variables = CELLS*len(VALUES)
   getKnown()
   constraints()
-  total_expressions = len(lines)
+  total_expressions = len(CONSTRAINTS) + len(KNOWNS)
+  f = open(INFILE, 'w')
   f.write("c **** sudoku solver tony bell 2013 ****\n")
   f.write("p cnf %d %d\n" % (total_variables, total_expressions))
-  f.write('\n'.join(lines))
+  f.write('\n'.join(CONSTRAINTS + KNOWNS))
   f.close()
 
 def getSquare(square_no):
@@ -99,7 +98,12 @@ def solve():
   os.system('MiniSat_v1.14_cygwin %s %s' % (INFILE, OUTFILE))
   if VERBOSE: os.system('cat %s' % INFILE)
   result = open(OUTFILE, 'r').readlines()
-  printResults(result[1][0:-3])
+  if result[0].find('UNSAT') == 0 :
+    SOLUTION = "UNSAT"
+    return False
+  else:  
+    printResults(result[1][0:-3])
+    return True
 
 def printResults(results):
   for r in [int(x) for x in results.split(' ') if int(x) > 0]:
@@ -117,27 +121,20 @@ def printResults(results):
         T += '|'
       T += soln[(r-1)*COLUMNS + (c-1)]
     T += '\n'
-
   print T
 
-  nums = [x for x in results.split(' ') if int(x) > 0 ]
-  print "%d nums found: %s" % (len(nums), str(nums))
-    #print soln[(r-1)*COLUMNS:r*COLUMNS]
 
-def testForSecondSolution():
-  f = open(OUTFILE, 'r')
-  g = open(INFILE, 'a')
-  g.write(negate(f.readlines()[1]))
-  f.close()
-  g.close()
-  os.system('MiniSat_v1.14_cygwin %s %s' % (INFILE, OUTFILE))
-  result = open(OUTFILE, 'r').readlines()
-  printResults(result[1][0:-3])
+def solve_hard_problems():
+  f = open('hard.data', 'r')
+  problems = [x[0:-1] for x in f.readlines() if len(x) > 4]
+  successful = 0
 
-  
-def negate(s):
-  return ' '.join(map(lambda x: str(-int(x)) if int(x)!=0 else '0',s.split(' ')))
+  for prob in problems:
+    init_board(prob)
+    if solve() is True: successful += 1
+
+  print "%d/%d successfully solved!" % (successful, len(problems))
 
 if __name__ == "__main__":
-  solve()
-  testForSecondSolution()
+  solve_hard_problems()
+
